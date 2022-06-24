@@ -20,7 +20,7 @@ import gym
 from gym import spaces
 from random import choices, randint
 
-from FiniteMDP3 import FiniteMDP
+from FiniteMDP import FiniteMDP
 
 
 class SuttonGridWorldEnv(gym.Env):
