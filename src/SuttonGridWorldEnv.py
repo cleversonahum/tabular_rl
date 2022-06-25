@@ -240,7 +240,7 @@ def reproduce_figures():
 def try_q_learning():
     env = SuttonGridWorldEnv()
     mdp = FiniteMDP(env)
-    num_iterations_for_training = 50000
+    num_iterations_for_training = 500000 #500000 leads to finding optimum policy
     num_iterations_for_testing = 10000
     #use optimum policy
     action_values, iteration = mdp.compute_optimal_action_values()
@@ -250,7 +250,7 @@ def try_q_learning():
 
     #learn a policy with Q-learning
     mdp = FiniteMDP(env)
-    stateActionValues, rewardsQLearning = mdp.execute_q_learning(maxNumIterations=10, maxNumIterationsQLearning=num_iterations_for_training, explorationProbEpsilon=0.2)
+    stateActionValues, rewardsQLearning = mdp.execute_q_learning(maxNumIterations=1, maxNumIterationsQLearning=num_iterations_for_training, explorationProbEpsilon=0.2)
     print('stateActionValues:',stateActionValues)
     print('rewardsQLearning:',rewardsQLearning)
     #print('Using Q-learning, total reward over training=',np.sum(rewardsQLearning))
