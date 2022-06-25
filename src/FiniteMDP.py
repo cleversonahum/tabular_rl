@@ -51,10 +51,11 @@ class FiniteMDP:
 
     def prettyPrintValues(self, action_values, stateListGivenIndex, actionListGivenIndex):
         '''
-        AK-TODO: in fact we are not printing a "policy" here, but the action values.
-        I guess a policy cannot be described by a table.
-        :param action_values:
-        :return:
+        Note that a policy is represented here as a distribution over the
+        possible actions for each state and stored as an array of dimension S x A.
+        A general policy may be represented in other ways. But considering the
+        adopted representation here, the "policy" coincides with the distribution
+        of actions for each state.
         '''
         for s in range(self.S):
             currentState = stateListGivenIndex[s]
@@ -74,10 +75,11 @@ class FiniteMDP:
         return policy
 
     '''
-    A policy is provided.
+    Iterative policy evaluation. Page 75 of [Sutton, 2018].
+    Here a policy (not necessarily optimum) is provided.
+    It can generate, for instance, Fig. 3.2 in [Sutton, 2018]
     '''
     def compute_state_values(self, policy, in_place=False, discountGamma = 0.9):
-        '''Iterative policy evaluation. Page 75 of [Sutton, 2018]'''
         S = self.S
         A = self.A
         #(S, A, nS) = self.environment.nextStateProbability.shape
@@ -244,6 +246,7 @@ class FiniteMDP:
                 break
         if printInfo:
             print('totalReward = ', totalReward)
+        return totalReward
 
     # an episode with Q-Learning
     # @stateActionValues: values for state action pair, will be updated
@@ -294,7 +297,7 @@ class FiniteMDP:
                                          stepSizeAlpha=stepSizeAlpha,
                                          explorationProbEpsilon=explorationProbEpsilon)
                 rewardsQLearning[i] += reward
-            print('rewardsQLearning[i]', rewardsQLearning[i]) #AK
+            #print('rewardsQLearning[i]', rewardsQLearning[i]) #AK
         rewardsQLearning /= num_runs
         if False:
             print('rewardsQLearning = ', rewardsQLearning)
