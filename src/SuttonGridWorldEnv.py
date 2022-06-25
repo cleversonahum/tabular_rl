@@ -6,12 +6,11 @@
 # declaration at the top                                              #
 #######################################################################
 '''
-@TODO - implement the method step() and review things
-
-Implements the Grid World of Sutton & Barto's book
-of Example 3.5: Gridworld, pag. 60
-and
-of Example 3.8: Solving the Gridworld, pag. 65
+Implements the Grid World of Sutton & Barto's book, version 2018, with 550 pages:
+Example 3.5: Gridworld, pag. 60 and Example 3.8: Solving the Gridworld, pag. 65.
+Grid-world has 5 x 5 = 25 states.
+The states are numbered from top-left (state 0) to bottom-right (state 24) in
+zigzag scan.
 '''
 from __future__ import print_function
 import numpy as np
@@ -21,16 +20,19 @@ from gym import spaces
 from random import choices, randint
 
 from FiniteMDP import FiniteMDP
+from NextStateProbabilitiesEnv import NextStateProbabilitiesEnv
 
-
-class SuttonGridWorldEnv(gym.Env):
+'''
+It is a subclass of NextStateProbabilitiesEnv. It is the
+superclass that implements the step() function.
+'''
+class SuttonGridWorldEnv(NextStateProbabilitiesEnv):
 
     def __init__(self):
-        super().__init__()
         self.__version__ = "0.1.0"
-        self.createFiniteMDP()
-        self.action_space = spaces.Discrete(self.A)
-        self.observation_space = spaces.Discrete(self.S) #states are called observations in gym
+        #create the environment
+        nextStateProbability, rewardsTable = self.create_environment()
+        super().__init__(nextStateProbability, rewardsTable) #superclass constructor
 
     def postprocessing_MDP_step(self, history, printPostProcessingInfo):
         '''This method overrides its superclass equivalent and
@@ -58,34 +60,35 @@ class SuttonGridWorldEnv(gym.Env):
             stateListGivenIndex.append(bufferStateList[i])
             stateDictionaryGetIndex[bufferStateList[i]] = uniqueIndex
             uniqueIndex += 1
-        if True:
+        if False:
             print('stateDictionaryGetIndex = ', stateDictionaryGetIndex)
             print('stateListGivenIndex = ', stateListGivenIndex)
         return stateDictionaryGetIndex, stateListGivenIndex
 
-    def createFiniteMDP(self):
+    def create_environment(self):
         '''Define the MDP process. Overrides default method from superclass.'''
 
         WORLD_SIZE = 5
 
         self.stateDictionaryGetIndex, self.stateListGivenIndex = self.createStatesDataStructures(WORLD_SIZE)
-
+        #top-left corner is [0, 0]
         A_POS = [0, 1]
         A_PRIME_POS = [4, 1]
         B_POS = [0, 3]
         B_PRIME_POS = [2, 3]
         self.discount = 0.9
 
-        world = np.zeros((WORLD_SIZE, WORLD_SIZE))
+        #world = np.zeros((WORLD_SIZE, WORLD_SIZE))
 
         # left, up, right, down
-        actions = ['L', 'U', 'R', 'D']
+        # actions = ['north', 'south', 'east', 'west'] #according to the book
+        actions = ['L', 'U', 'R', 'D'] #use a single letter for simplicity
         self.actionDictionaryGetIndex, self.actionListGivenIndex = self.createActionsDataStructures()
 
         S = WORLD_SIZE * WORLD_SIZE
         A = len(actions)
-        self.A = A
-        self.S = S
+        #self.A = A
+        #self.S = S
 
         # this is the original code from github
         actionProb = []
@@ -141,11 +144,11 @@ class SuttonGridWorldEnv(gym.Env):
                 nextState[i].append(next)
                 actionReward[i].append(reward)
 
-        print('nextState = ', nextState)
-        print('actionReward = ', actionReward)
+        #print('nextState = ', nextState)
+        #print('actionReward = ', actionReward)
         # now convert to our general and smarter :) format:
-        self.nextStateProbability = np.zeros((S, A, S))
-        self.rewardsTable = np.zeros((S, A, S))
+        nextStateProbability = np.zeros((S, A, S))
+        rewardsTable = np.zeros((S, A, S))
         for i in range(WORLD_SIZE):
             for j in range(WORLD_SIZE):
                 nextsdic = nextState[i][j]  # this is a dictionary
@@ -156,9 +159,10 @@ class SuttonGridWorldEnv(gym.Env):
                     (nexti, nextj) = nextsdic[actions[a]]
                     nexts = self.stateDictionaryGetIndex[(nexti, nextj)]
                     # After the agent chooses a state, the MDP “dynamics” is such that p(s’/s,a) is 1 to only one state and zero to the others
-                    self.nextStateProbability[s, a, nexts] = 1
+                    nextStateProbability[s, a, nexts] = 1
                     r = rdic[actions[a]]
-                    self.rewardsTable[s, a, nexts] = r
+                    rewardsTable[s, a, nexts] = r
+        return nextStateProbability, rewardsTable
 
     def prettyPrint(self):
         print(self.stateListGivenIndex)
@@ -177,7 +181,7 @@ class SuttonGridWorldEnv(gym.Env):
     def get_state(self):
         return self.currentObservation
 
-    def step(self, action):
+    def old_step(self, action):
         """
         The agent takes a step in the environment.
         Parameters
@@ -200,29 +204,64 @@ class SuttonGridWorldEnv(gym.Env):
         history = None
         return ob, reward, gameOver, history
 
-if __name__ == '__main__':
+'''
+Reproduce Figures 3.2 and 3.5 from [Sutton, 2018], Examples 3.5 and 3.8, respectively.
+'''
+def reproduce_figures():    
     env = SuttonGridWorldEnv()
-    env.prettyPrint()
-
     mdp = FiniteMDP(env)
 
     #how to get only the p(s'/s) by marginalizing p(s'/a,s) (summing dimension i=1)
     #onlyNextStateProbability = np.sum(mdp.nextStateProbability, 1)
 
+    #get Fig. 3.5, which used a random policy
     equiprobable_policy = mdp.getEquiprobableRandomPolicy()
     state_values, iteration = mdp.compute_state_values(equiprobable_policy, in_place=True)
-    print('Equiprobable, iteration = ', iteration, ' state_values = ', np.round(state_values, 1))
+    print('Reproducing Fig. 3.2 from [Sutton, 2018] with equiprobable random policy in page 60.')
+    print('Figure 3.2 Gridworld example: exceptional reward dynamics (left) and state-value function for the equiprobable random policy (right).')
+    print('Number of iterations = ', iteration)
+    print('State values:')
+    print(np.round(np.reshape(state_values, (5,5)), 1))
 
     state_values, iteration = mdp.compute_optimal_state_values()
-    print('Optimal, iteration = ', iteration, ' state_values = ', np.round(state_values, 1))
+    print('Reproducing Fig. 3.5 from [Sutton, 2018] with optimum policy in page 65.')
+    print('Figure 3.5: Optimal solutions to the gridworld example')
+    print('Number of iterations = ', iteration)
+    print('State values:')
+    print(np.round(np.reshape(state_values, (5,5)), 1))
 
+    #use the value-based policy to obtain the \pi_star right subplot in Fig. 3.5.
     action_values, iteration = mdp.compute_optimal_action_values()
-    print('iteration = ', iteration, ' action_values = ', np.round(action_values, 1))
-
-    #AK-TODO no need to be class method
+    if False: #this is not shown in Fig. 3.5, but you can visualize action_values if you wish 
+        print('iteration = ', iteration, ' action_values = ', np.round(action_values, 1))
     policy = mdp.convert_action_values_into_policy(action_values)
     mdp.prettyPrintValues(policy, env.stateListGivenIndex, env.actionListGivenIndex)
 
-    mdp.run_MDP_for_given_policy(policy,maxNumIterations=100)
+def try_q_learning():
+    env = SuttonGridWorldEnv()
+    mdp = FiniteMDP(env)
+    num_iterations_for_training = 50000
+    num_iterations_for_testing = 10000
+    #use optimum policy
+    action_values, iteration = mdp.compute_optimal_action_values()
+    optimum_policy = mdp.convert_action_values_into_policy(action_values)
+    totalReward = mdp.run_MDP_for_given_policy(optimum_policy,maxNumIterations=num_iterations_for_testing)
+    print('Using optimum policy, total reward=', totalReward)
 
-    mdp.execute_q_learning(maxNumIterations=100)
+    #learn a policy with Q-learning
+    mdp = FiniteMDP(env)
+    stateActionValues, rewardsQLearning = mdp.execute_q_learning(maxNumIterations=10, maxNumIterationsQLearning=num_iterations_for_training, explorationProbEpsilon=0.2)
+    print('stateActionValues:',stateActionValues)
+    print('rewardsQLearning:',rewardsQLearning)
+    #print('Using Q-learning, total reward over training=',np.sum(rewardsQLearning))
+    qlearning_policy = mdp.convert_action_values_into_policy(stateActionValues)
+    totalReward = mdp.run_MDP_for_given_policy(qlearning_policy,maxNumIterations=num_iterations_for_testing)
+    print('Using Q-learning, total reward over test=', totalReward)
+    print('Check the Q-learning policy:')
+    mdp.prettyPrintValues(qlearning_policy, env.stateListGivenIndex, env.actionListGivenIndex)
+
+if __name__ == '__main__':
+    #env.prettyPrint()
+    #reproduce_figures()
+    try_q_learning()
+
