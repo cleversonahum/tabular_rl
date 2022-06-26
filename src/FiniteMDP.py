@@ -1,26 +1,27 @@
 '''
-TO DO cannot assume it is a NextStateEnv but support a general env. In
+This class implements a finite Markov Decision Process (MDP) for tabular RL.
+Look at the definition of a finite MDP in page 49 of
+Sutton & Barto's book, version 2018, with 550 pages.
+
+This implementation is very general in the sense that it represents internally
+rewards, actions and states as natural numbers. For instance, if a grid-world
+has actions "left", "right", "up", "down", they must be mapped to integers such
+as 0, 1, 2 and 3.
+
+The finite MDP class is constructed based on an environment, which is an OpenAI's
+gym.Env with spaces.Discrete() for both states (called observations in gym)
+and actions. Only this environment can have knowledge about the labels associated
+to the natural numbers used within this MDP class (in the grid-world example,
+the labels "left", "right", "up", "down"). In this case, the environment provides
+the label information via the lists: stateListGivenIndex and actionListGivenIndex.
+
+Note that a policy is represented here as a matrix S x A, providing a distribution
+over the possible actions for each state. A matrix with the state values can be
+easily converted into a policy. 
+
+Aldebaro. June 25, 2022.
+@TODO should not assume it is a NextStateEnv, but support a general env. In
 compute_optimal_action_values and others need to pass as parameters.
-
-This class implements a finite MDP for tabular RL. It is very general
-in the sense that it represents internally rewards, actions and states
-as natural numbers. For instance, if a grid-world has actions "left",
-"right", "up", "down", they must be mapped to integers such as 0, 1, 2 and 3.
-Only the environment that extends this class will have knowledge about
-the labels "left", "right", "up", "down". 
-
-It has an environment, which is a gym env with spaces.Discrete() for both
-states (called observations in gym) and actions.
-
-In case we want to use the labels of states and actions, we need extra
-information, provided e.g. by stateListGivenIndex and actionListGivenIndex.
-
-Using powerful Python features, it's easy for an environment to
-convert back and forth the representations of rewards, actions and states
-into these integers using bidirectional data structures based on hash tables.
-For example, one can use https://pypi.org/project/bidict/ and save storage space
-by not duplicating entries. Or, because we have integers as one key, one can use
-a dict and a list, instead of a bidict, which is what is implemented now.
 '''
 from __future__ import print_function
 import numpy as np
@@ -118,7 +119,10 @@ class FiniteMDP:
         return state_values, iteration
 
     '''
-    A policy is not provided.
+    Different than compute_state_values(), in this method a policy is not provided,
+    and the optimum values are estimated. In [Sutton, 2018] the main result of
+    this method in called "the optimal state-value function" and defined in
+    Eq. (3.15) in page 62.
     '''
     def compute_optimal_state_values(self, discountGamma = 0.9):
         '''Page 63 of [Sutton, 2018], Eq. (3.19)'''
@@ -155,6 +159,10 @@ class FiniteMDP:
 
         return state_values, iteration
 
+    '''
+    In [Sutton, 2018] the main result of this method in called "the optimal
+    action-value function" and defined in Eq. (3.16) in page 63.
+    '''
     def compute_optimal_action_values(self, discountGamma = 0.9):
         '''Page 64 of [Sutton, 2018], Eq. (3.20)'''
         S = self.S
