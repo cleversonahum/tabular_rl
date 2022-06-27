@@ -1,0 +1,374 @@
+'''
+Implements a simple user scheduling environment consisting of a finite MDP.
+There are Nu=2 users.
+The user positions are numbered from top-left to bottom-right in
+zigzag scan. Assuming G=6:
+(0,0) (0,1) ... (0,5)
+(1,0) (1,1) ... (1,5)
+...
+(5,0) (5,1) ... (5,5)
+
+It is a subclass of NextStateProbabilitiesEnv.
+
+It assumes knowledge of the correct nextStateProbability such that it allows
+to calculate optimum solution.
+'''
+import numpy as np
+import itertools
+import sys
+#from akpy.FiniteMDP3 import FiniteMDP
+from FiniteMDP import FiniteMDP
+#from akpy.NextStateProbabilitiesEnv import NextStateProbabilitiesEnv
+from NextStateProbabilitiesEnv import NextStateProbabilitiesEnv
+import gym
+from gym import spaces
+
+class UserSchedulingEnv(NextStateProbabilitiesEnv):
+
+    #def __init__(self, discount=1.0):
+    def __init__(self):
+        #call superclass constructor
+        nextStateProbability, rewardsTable = self.createEnvironment()
+        super().__init__(nextStateProbability, rewardsTable)
+        ##NextStateProbabilitiesEnv.__init__(self,nextStateProbability, rewardsTable)
+
+    """
+    Assumes Nu=2 users.
+    """
+    def prettyPrint(self):
+        '''Print MDP'''
+        nextStateProbability = self.nextStateProbability
+        rewardsTable = self.rewardsTable
+        stateListGivenIndex = self.stateListGivenIndex
+        actionListGivenIndex = self.actionListGivenIndex
+        S = len(stateListGivenIndex)
+        A = len(actionListGivenIndex)
+        for s in range(S):
+            currentState = stateListGivenIndex[s]
+            all_positions = currentState[0]
+            buffers = currentState[1]
+            #print('current state s', s, '=', currentState, sep='')  # ' ',end='')
+            print('current state s', s, '= p=', all_positions, "b=", buffers, sep='')  # ' ',end='')
+            for a in range(A):
+                currentAction = actionListGivenIndex[a]
+                print('  action a', a, '=', currentAction, sep='', end='')
+                shouldPrintOnce = True
+                for nexts in range(S):
+                    if nextStateProbability[s, a, nexts] == 0:
+                        continue
+                        #nonZeroIndices = np.where(nextStateProbability[s, a] > 0)[0]
+                    # if len(nonZeroIndices) != 2:
+                    #    print('Error in logic, not 2: ', len(nonZeroIndices))
+                    #    exit(-1)
+                    r = rewardsTable[s, a, nexts]
+                    newBuffers = stateListGivenIndex[nexts][0]
+                    currentBuffers = currentState[0]
+                    if r < 0 and r != self.outageReward:
+                        drop = self.dictionaryOfUsersWithDroppedPackets[(s,a,nexts)]
+                        extraPackets = np.array([0, 0, 0])
+                        extraPackets[drop] = 1
+                        transmitRate = np.array([1, 1, 1]) + currentBuffers - newBuffers -extraPackets
+                    else:
+                        transmitRate = np.array([1, 1, 1]) + currentBuffers - newBuffers
+                    if shouldPrintOnce:
+                        print(' transmit=', transmitRate)
+                        shouldPrintOnce = False
+                    if r < 0 and r != self.outageReward:
+                        print('    next s', nexts, '=', stateListGivenIndex[nexts],
+                              ' prob=', nextStateProbability[s, a, nexts],
+                              ' reward=', r,
+                              ' dropped=', drop,
+                              sep='')
+                    else:
+                        print('    next s', nexts, '=', stateListGivenIndex[nexts],
+                              ' prob=', nextStateProbability[s, a, nexts],
+                              ' reward=', r,
+                              sep='')
+
+    def createEnvironment(self):
+        '''
+        The state is defined as the position of the two users and their buffers occupancy.
+        The action is to select one of the two users.
+        Given that Nu=2 and G=6, there are S=xx states and A=2 actions
+        The channel is fixed.
+        The base station (BS) is located at the bottom-left corner.
+        '''
+        G = 6 #grid dimension
+        channel_spectral_efficiency = np.zeros((G,G))
+        B = 3  # buffer size
+        Nu = 2 #number of users
+        num_incoming_packets_per_time_slot = 2
+
+        actionDictionaryGetIndex, actionListGivenIndex = createActionsDataStructures()
+        A = len(actionListGivenIndex)
+
+        stateDictionaryGetIndex, stateListGivenIndex = createStatesDataStructures()
+        S = len(stateListGivenIndex)
+
+        #now we need to populate the nextStateProbability array and rewardsTable,
+        # the distribution p(s'|s,a) and expected values r(s,a,s') as in Example 3.3 of [Sutton, 2018], page 52.
+        # In this case the distribution p can be stored in a 3d matrix of dimension S x A x S and the reward table in
+        # another matrix with the same dimension.
+
+        nextStateProbability = np.zeros((S, A, S))
+        rewardsTable = np.zeros((S, A, S))
+        plotBar = True
+        for s in range(0, S):
+            #current state:
+            currentState = stateListGivenIndex[s]
+            (all_positions, buffers_occupancy) = currentState #interpret the state
+            (p1, p2) = all_positions
+            print('Reading state: p1=', p1, ',p2=', p2,'buffers=',buffers_occupancy)
+            #get the channels spectral efficiency (SE)
+            #@TODO obtain the SE based on the positions p1 and p2
+            for a in range(A):                
+                currentAction = actionListGivenIndex[a]
+                chosen_user = a
+                #based on selected (chosen) user, update its buffer
+                transmitRate = 3 #transmitted packets 
+                new_buffer = buffers_occupancy[chosen_user] - transmitRate #decrement buffer
+                new_buffer += num_incoming_packets_per_time_slot #arrival of new packets
+
+                #check if overflow
+                #in case positive, limit the buffers to maximum capacity and 
+                #update reward
+
+                drop = True #dropped packets occurred?                
+                # calculate rewards
+                sumDrops = np.sum(drop)
+                if sumDrops > 0:
+                    r = -10 * sumDrops
+                else:
+                    r = transmitRate
+
+                #calculate nextState
+                nextState = 0
+
+                # probabilistic part: consider the user mobility
+                nextStateIndice = stateDictionaryGetIndex[nextState]
+                #take in account mobility
+                nextStateProbability[s, a, nextStateIndice] = None
+                rewardsTable[s, a, nextStateIndice] = r
+        self.actionDictionaryGetIndex = actionDictionaryGetIndex
+        self.actionListGivenIndex = actionListGivenIndex
+        self.stateDictionaryGetIndex = stateDictionaryGetIndex
+        self.stateListGivenIndex = stateListGivenIndex
+
+        return nextStateProbability, rewardsTable
+
+    def postprocessing_MDP_step(self, history, printPostProcessingInfo):
+        '''This method overrides its superclass equivalent and
+        allows to post-process the results'''
+        currentIteration = history["time"]
+        s= history["state_t"]
+        a = history["action_t"]
+        reward = history["reward_tp1"]
+        nexts = history["state_tp1"]
+
+        currentState = self.stateListGivenIndex[s]
+        nextState = self.stateListGivenIndex[nexts]
+        currentBuffer = np.array(nextState[0])
+        nextBuffer = np.array(currentState[0])
+
+        transmittedPackets = np.array([1,1,1])+currentBuffer-nextBuffer
+        if reward < 0: #there was packet drop
+            drop=self.dictionaryOfUsersWithDroppedPackets[(s,a,nexts)]
+            transmittedPackets[drop] += -1
+            droppedPackets = np.zeros((self.M,))
+            droppedPackets[drop] = 1
+            self.packetDropCounts += droppedPackets
+        #compute bit rate
+        self.bitRates += transmittedPackets
+        if printPostProcessingInfo:
+            print(self.bitRates, self.packetDropCounts)
+        #print('accumulated rates =', self.bitRates, ' drops =', self.packetDropCounts)
+        #print('kkkk = ', s, action, reward, nexts)
+
+    def resetCounters(self):
+        #reset counters
+        self.bitRates = np.zeros((self.M,))
+        self.packetDropCounts = np.zeros((self.M,))
+
+def run_all():
+    #mdp = FiniteMDP(discount=0.9)
+    shouldPrintAll = True
+    env = UserSchedulingEnv()
+    mdp = FiniteMDP(env)
+
+    #nextStateProbability, rewardsTable = createFiniteMDP()
+    # nextStateProbability, rewardsTable = get_mdp_for_grid_world()
+    # nextStateProbability, rewardsTable = get_simple_mdp()
+    equiprobable_policy = mdp.getEquiprobableRandomPolicy()
+    state_values, iteration = mdp.compute_state_values(equiprobable_policy)
+
+    if shouldPrintAll:
+        print('In-place:')
+        print('State values under random policy after %d iterations', (iteration))
+        print(state_values)
+
+    state_values, iteration = mdp.compute_state_values(equiprobable_policy)
+    if shouldPrintAll:
+        print('Synchronous:')
+        print('State values under random policy after %d iterations', (iteration))
+        print(state_values)
+
+    state_values, iteration = mdp.compute_optimal_state_values()
+    if shouldPrintAll:
+        print('Optimum states, iteration = ', iteration, ' state_values = ', np.round(state_values, 1))
+
+    optimal_action_values, iteration = mdp.compute_optimal_action_values()
+    if shouldPrintAll:
+        print('Optimum actions, iteration = ', iteration, ' action_values = ', np.round(optimal_action_values, 1))
+
+    #AK-TODO no need to be class method
+    optimal_policy = mdp.convert_action_values_into_policy(optimal_action_values)
+    if shouldPrintAll:
+        print('policy = ', optimal_policy)
+        mdp.prettyPrintValues(optimal_policy, env.stateListGivenIndex, env.actionListGivenIndex)
+
+    q_learning_policy, rewardsQLearning = mdp.execute_q_learning(maxNumIterations=100)
+
+    #print('Example: ')
+    if False:
+        mdp.run_MDP_for_given_policy(optimal_policy, maxNumIterations=100)
+    else:
+        mdp.run_MDP_for_given_policy(equiprobable_policy,maxNumIterations=100)
+
+def evaluateLearning():
+    env = UserSchedulingEnv()
+    mdp = FiniteMDP(env)
+    alphas = (0.1, 0.3, 0.5, 0.7, 0.9, 0.99)
+    epsilons = (0.1, 0.01, 0.001)
+    for a in alphas:
+        for e in epsilons:
+            #print('alpha=',a,'epsilon=',e)
+            fileName = 'smooth_q_eps' + str(e) + '_alpha' + str(a) + '.txt'
+            sys.stdout = open(fileName, 'w')
+            action_values, rewardsQLearning = mdp.execute_q_learning(maxNumIterations=1000, maxNumIterationsQLearning = 1,
+                                                                     num_runs = 20, stepSizeAlpha=a, explorationProbEpsilon=e)
+            for i in range(len(rewardsQLearning)):
+                print(rewardsQLearning[i])
+
+def compareOptimalAndQLearningPolicies():
+
+    env = UserSchedulingEnv()
+    mdp = FiniteMDP(env)
+    N=10000
+    maxNumIterations=100
+    statsQLearning = list()
+    statsOptimal = list()
+    for i in range(N):
+        print(i)
+        action_valuesOptimal, iteration = mdp.compute_optimal_action_values()
+        action_valuesQLearning, rewardsQLearning = mdp.execute_q_learning(maxNumIterations=400, maxNumIterationsQLearning = 1,
+                                                                          num_runs = 1, stepSizeAlpha=0.5, explorationProbEpsilon=0.001)
+        policyOptimal = mdp.convert_action_values_into_policy(action_valuesOptimal)
+        policyQ = mdp.convert_action_values_into_policy(action_valuesQLearning)
+        #to get performance while testing only
+        env.resetCounters()
+        print('Optimal')
+        mdp.run_MDP_for_given_policy(policyOptimal,maxNumIterations=maxNumIterations,printPostProcessingInfo=False)
+        statsOptimal.append( (np.sum(env.bitRates),  np.sum(env.packetDropCounts)) )
+        env.resetCounters()
+        print('Q-learning')
+        mdp.run_MDP_for_given_policy(policyQ,maxNumIterations=maxNumIterations,printPostProcessingInfo=False)
+        statsQLearning.append( (np.sum(env.bitRates)/maxNumIterations,  np.sum(env.packetDropCounts)/maxNumIterations) )
+
+    sys.stdout = open('optimal.txt', 'w')
+    for values in statsOptimal:
+        print(values[0], values[1])
+
+    sys.stdout = open('qlearning.txt', 'w')
+    for values in statsQLearning:
+        print(values[0], values[1])
+
+"""
+    Assumes Nu=2 users.
+"""
+def createActionsDataStructures():
+            possibleActions = ['u1', 'u2']
+            dictionaryGetIndex = dict()
+            listGivenIndex = list()
+            for uniqueIndex in range(len(possibleActions)):
+                dictionaryGetIndex[possibleActions[uniqueIndex]] = uniqueIndex
+                listGivenIndex.append(possibleActions[uniqueIndex])
+            return dictionaryGetIndex, listGivenIndex
+
+
+def createStatesDataStructures(G=6, Nu=2, B=3):
+        show_debug_info = True
+        # G is the axis dimension, on both horizontal and vertical
+        # I cannot use below:
+        #all_positions_list = list(itertools.product(np.arange(G), repeat=2))
+        #because the base station is at position (G-1, 0) and users cannot be
+        #in the same position at the same time        
+        if show_debug_info:
+            print("theoretical S=", (G**2-1)*(G**2-2)*((B+1)**Nu))
+
+        bs_position = (G-1, 0) #Base station position
+
+        all_positions_of_single_user = list()
+        for i in range(G):
+            for j in range(G):
+                if (i == bs_position[0]) and (j == bs_position[1]):
+                    continue #do not allow user at the BS position
+                all_positions_of_single_user.append((i,j))
+
+        #create Cartesian product among positions of users
+        all_positions_list = list(itertools.product(all_positions_of_single_user, repeat=Nu))
+        #need to remove the positions that coincide
+        N = len(all_positions_list)
+        #print("N=",N)
+        i = 0
+        while (True):
+            positions_pair = all_positions_list[i]
+            position_u1 = positions_pair[0]
+            position_u2 = positions_pair[1]
+            if position_u1 == position_u2:
+                all_positions_list.pop(i)
+                N -= 1 #decrement the number N of elements in list
+            else:
+                i += 1 #continue searching the list
+            if i >= N:
+                break
+
+        all_buffer_occupancy_list = list(itertools.product(np.arange(B + 1), repeat=Nu))
+        all_states = itertools.product(all_positions_list, all_buffer_occupancy_list)
+        all_states = list(all_states)
+        if show_debug_info:
+            print("all_positions_list",all_positions_list)
+            #Nu is the number of users and B the buffer size
+            print("all_buffer_occupancy_list",all_buffer_occupancy_list)
+            print('num of position states=', len(all_positions_list))
+            print('num of buffer states=', len(all_buffer_occupancy_list))
+            print("calculated total num S of states= ", len(all_states))
+
+        N = len(all_states) #number of states
+        stateListGivenIndex = list()
+        stateDictionaryGetIndex = dict()
+        uniqueIndex = 0
+        # add states to both dictionary and its inverse mapping (a list)
+        for i in range(N):
+            stateListGivenIndex.append(all_states[i])
+            stateDictionaryGetIndex[all_states[i]] = uniqueIndex
+            uniqueIndex += 1
+        if False:
+            print('stateDictionaryGetIndex = ', stateDictionaryGetIndex)
+            print('stateListGivenIndex = ', stateListGivenIndex)
+        return stateDictionaryGetIndex, stateListGivenIndex
+
+if __name__ == '__main__':
+    env = UserSchedulingEnv()
+    env.prettyPrint()
+    G=6
+    Nu=2
+    B=3
+    createStatesDataStructures(G, Nu, B)
+
+    if False:
+        run_all()
+        environment = UserSchedulingEnv()
+        environment.prettyPrint()
+        mdp = FiniteMDP(environment)
+        #evaluateLearning()
+        compareOptimalAndQLearningPolicies()
