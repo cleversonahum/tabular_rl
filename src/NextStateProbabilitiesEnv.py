@@ -16,7 +16,7 @@ class NextStateProbabilitiesEnv(gym.Env):
         self.__version__ = "0.1.0"
         # print("AK Finite MDP - Version {}".format(self.__version__))
         self.nextStateProbability = nextStateProbability
-        self.rewardsTable = rewardsTable
+        self.rewardsTable = rewardsTable #expected rewards
 
         self.currentObservation = 0
 
@@ -103,6 +103,7 @@ if __name__ == "__main__":
     S = 3
     A = 2
     nextStateProbability = np.random.rand(S,A,S) #positive numbers
+    #@TODO make it a probability
     rewardsTable = np.random.randn(S,A,S) #can be negative
     environment = NextStateProbabilitiesEnv(nextStateProbability, rewardsTable)
     action = 0

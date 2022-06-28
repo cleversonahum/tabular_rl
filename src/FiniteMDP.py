@@ -178,9 +178,8 @@ class FiniteMDP:
                 for a in range(A):
                     value = 0
                     for nexts in range(S):
-                        p = self.environment.nextStateProbability[s, a, nexts]
-                        r = self.environment.rewardsTable[s, a, nexts]
-                        # print('amor', r, p, src[nexts])
+                        p = self.environment.nextStateProbability[s, a, nexts] #p(s'|s,a) = p(nexts|s,a)
+                        r = self.environment.rewardsTable[s, a, nexts] #r(s,a,s') = r(s,a,nexts)
                         best_a = -np.Infinity
                         for nexta in range(A):
                             temp = action_values[nexts, nexta]

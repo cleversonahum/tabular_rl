@@ -10,7 +10,11 @@ Implements the Grid World of Sutton & Barto's book, version 2018, with 550 pages
 Example 3.5: Gridworld, pag. 60 and Example 3.8: Solving the Gridworld, pag. 65.
 Grid-world has 5 x 5 = 25 states.
 The states are numbered from top-left (state 0) to bottom-right (state 24) in
-zigzag scan.
+zigzag scan:
+0   1  2  3  4
+5   6  7  8  9
+...
+20 21 23 23 24
 '''
 from __future__ import print_function
 import numpy as np
@@ -262,6 +266,6 @@ def try_q_learning():
 
 if __name__ == '__main__':
     #env.prettyPrint()
-    #reproduce_figures()
-    try_q_learning()
+    reproduce_figures() #From Sutton's book
+    #try_q_learning()
 
