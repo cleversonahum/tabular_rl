@@ -27,7 +27,7 @@ from gym import spaces
 class UserSchedulingEnv(NextStateProbabilitiesEnv):
 
     #def __init__(self, discount=1.0):
-    def __init__(self, channel_spectral_efficiencies):
+    def __init__(self):
         # self.channel_spectral_efficiencies = channel_spectral_efficiencies
         #call superclass constructor
         self.ues_pos_prob, self.channel_spectral_efficiencies, self.ues_valid_actions = self.read_external_files()
@@ -375,7 +375,7 @@ def createStatesDataStructures(G=6, Nu=2, B=3):
 if __name__ == '__main__':
     G=6
     se = np.ones((G,G))
-    env = UserSchedulingEnv(se)
+    env = UserSchedulingEnv()
     env.prettyPrint()
     Nu=2
     B=3
