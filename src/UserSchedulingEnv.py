@@ -13,6 +13,7 @@ It is a subclass of NextStateProbabilitiesEnv.
 It assumes knowledge of the correct nextStateProbability such that it allows
 to calculate optimum solution.
 '''
+from logging.config import valid_ident
 import numpy as np
 import itertools
 import sys
@@ -27,11 +28,32 @@ class UserSchedulingEnv(NextStateProbabilitiesEnv):
 
     #def __init__(self, discount=1.0):
     def __init__(self, channel_spectral_efficiencies):
-        self.channel_spectral_efficiencies = channel_spectral_efficiencies
+        # self.channel_spectral_efficiencies = channel_spectral_efficiencies
         #call superclass constructor
+        self.ues_pos_prob, self.channel_spectral_efficiencies, self.ues_valid_actions = self.read_external_files()
+        self.actions_move = np.array([
+            [-1, 0],
+            [0, 1],
+            [1, 0],
+            [0, -1],
+            [0, 0],
+        ])  # Up, right, down, left, stay
         nextStateProbability, rewardsTable = self.createEnvironment()
         super().__init__(nextStateProbability, rewardsTable)
         ##NextStateProbabilitiesEnv.__init__(self,nextStateProbability, rewardsTable)
+
+    def read_external_files(self):
+        ue0_file = np.load("./src/mobility_ue0.npz")
+        ue0 = ue0_file.f.matrix_pos_prob
+        ue0_valid = ue0_file.f.pos_actions_prob
+        ue1_file = np.load("./src/mobility_ue1.npz")
+        ue1 = ue1_file.f.matrix_pos_prob
+        ue1_valid = ue1_file.f.pos_actions_prob
+        capacity = np.load("./src/spec_eff_matrix.npz")
+        capacity = capacity.f.spec_eff_matrix
+
+
+        return ([ue0,ue1],capacity, [ue0_valid,ue1_valid])
 
     """
     Assumes Nu=2 users.
@@ -102,13 +124,13 @@ class UserSchedulingEnv(NextStateProbabilitiesEnv):
                 #get the channels spectral efficiency (SE)
                 chosen_user_position = all_positions[chosen_user]
 
-                #@TODO obtain the SE based on the positions p1 and p2
                 se = self.channel_spectral_efficiencies[chosen_user_position[0],chosen_user_position[1]]
                 #based on selected (chosen) user, update its buffer
                 transmitRate = se #transmitted packets 
 
                 new_buffer = np.array(buffers_occupancy)
                 new_buffer[chosen_user] -= transmitRate #decrement buffer of chosen user
+                new_buffer[new_buffer<0] = 0
                 new_buffer += num_incoming_packets_per_time_slot #arrival of new packets
 
                 #check if overflow
@@ -123,21 +145,23 @@ class UserSchedulingEnv(NextStateProbabilitiesEnv):
 
                 # calculate rewards
                 sumDrops = np.sum(number_dropped_packets)
-                if sumDrops > 0: #dropped packets occurred?
-                    r = -10 * sumDrops
-                else:
-                    r = transmitRate
+                r = -sumDrops
 
+                for ue1_action in np.arange(5):
+                    for ue2_action in np.arange(5):
+                        if self.ues_valid_actions[0][all_positions[0][0], all_positions[0][1]][ue1_action]!=0 and self.ues_valid_actions[1][all_positions[1][0], all_positions[1][1]][ue2_action]!=0:
+                            #calculate nextState
+                            new_position_ue1 = np.array(all_positions[0]) + self.actions_move[ue1_action]
+                            new_position_ue2 = np.array(all_positions[1]) + self.actions_move[ue2_action]
+                            if not (np.array_equal(new_position_ue1, new_position_ue2)) and not np.array_equal(new_position_ue1, np.array([5,0])) and not np.array_equal(new_position_ue2, np.array([5,0])):
+                                new_position = ((new_position_ue1[0],new_position_ue1[1]), (new_position_ue2[0],new_position_ue2[1]))
+                                nextState = (new_position, buffers_occupancy)
 
-                #calculate nextState
-                all_positions = ((0,1),(1,0))
-                nextState = (all_positions, buffers_occupancy)
-
-                # probabilistic part: consider the user mobility
-                nextStateIndice = indexGivenStateDictionary[nextState]
-                #take in account mobility
-                nextStateProbability[s, a, nextStateIndice] = None
-                rewardsTable[s, a, nextStateIndice] = r
+                                # probabilistic part: consider the user mobility
+                                nextStateIndice = indexGivenStateDictionary[nextState]
+                                #take in account mobility
+                                nextStateProbability[s, a, nextStateIndice] = self.ues_valid_actions[0][all_positions[0][0], all_positions[0][1]][ue1_action] * self.ues_valid_actions[1][all_positions[1][0], all_positions[1][1]][ue2_action]!=0
+                                rewardsTable[s, a, nextStateIndice] = r
         self.indexGivenActionDictionary = indexGivenActionDictionary
         self.actionGivenIndexList = actionGivenIndexList
         self.indexGivenStateDictionary = indexGivenStateDictionary
