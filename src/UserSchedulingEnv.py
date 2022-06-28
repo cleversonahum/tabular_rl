@@ -26,7 +26,8 @@ from gym import spaces
 class UserSchedulingEnv(NextStateProbabilitiesEnv):
 
     #def __init__(self, discount=1.0):
-    def __init__(self):
+    def __init__(self, channel_spectral_efficiencies):
+        self.channel_spectral_efficiencies = channel_spectral_efficiencies
         #call superclass constructor
         nextStateProbability, rewardsTable = self.createEnvironment()
         super().__init__(nextStateProbability, rewardsTable)
@@ -39,18 +40,18 @@ class UserSchedulingEnv(NextStateProbabilitiesEnv):
         '''Print MDP'''
         nextStateProbability = self.nextStateProbability
         rewardsTable = self.rewardsTable
-        stateListGivenIndex = self.stateListGivenIndex
-        actionListGivenIndex = self.actionListGivenIndex
-        S = len(stateListGivenIndex)
-        A = len(actionListGivenIndex)
+        stateGivenIndexList = self.stateGivenIndexList
+        actionGivenIndexList = self.actionGivenIndexList
+        S = len(stateGivenIndexList)
+        A = len(actionGivenIndexList)
         for s in range(S):
-            currentState = stateListGivenIndex[s]
+            currentState = stateGivenIndexList[s]
             all_positions = currentState[0]
             buffers = currentState[1]
             #print('current state s', s, '=', currentState, sep='')  # ' ',end='')
             print('current state s', s, '= p=', all_positions, "b=", buffers, sep='')  # ' ',end='')
             for a in range(A):
-                currentAction = actionListGivenIndex[a]
+                currentAction = actionGivenIndexList[a]
                 print('  action a', a, '=', currentAction, sep='', end='')
                 shouldPrintOnce = True
                 for nexts in range(S):
@@ -61,29 +62,8 @@ class UserSchedulingEnv(NextStateProbabilitiesEnv):
                     #    print('Error in logic, not 2: ', len(nonZeroIndices))
                     #    exit(-1)
                     r = rewardsTable[s, a, nexts]
-                    newBuffers = stateListGivenIndex[nexts][0]
+                    newBuffers = stateGivenIndexList[nexts][0]
                     currentBuffers = currentState[0]
-                    if r < 0 and r != self.outageReward:
-                        drop = self.dictionaryOfUsersWithDroppedPackets[(s,a,nexts)]
-                        extraPackets = np.array([0, 0, 0])
-                        extraPackets[drop] = 1
-                        transmitRate = np.array([1, 1, 1]) + currentBuffers - newBuffers -extraPackets
-                    else:
-                        transmitRate = np.array([1, 1, 1]) + currentBuffers - newBuffers
-                    if shouldPrintOnce:
-                        print(' transmit=', transmitRate)
-                        shouldPrintOnce = False
-                    if r < 0 and r != self.outageReward:
-                        print('    next s', nexts, '=', stateListGivenIndex[nexts],
-                              ' prob=', nextStateProbability[s, a, nexts],
-                              ' reward=', r,
-                              ' dropped=', drop,
-                              sep='')
-                    else:
-                        print('    next s', nexts, '=', stateListGivenIndex[nexts],
-                              ' prob=', nextStateProbability[s, a, nexts],
-                              ' reward=', r,
-                              sep='')
 
     def createEnvironment(self):
         '''
@@ -94,16 +74,15 @@ class UserSchedulingEnv(NextStateProbabilitiesEnv):
         The base station (BS) is located at the bottom-left corner.
         '''
         G = 6 #grid dimension
-        channel_spectral_efficiency = np.zeros((G,G))
         B = 3  # buffer size
         Nu = 2 #number of users
         num_incoming_packets_per_time_slot = 2
 
-        actionDictionaryGetIndex, actionListGivenIndex = createActionsDataStructures()
-        A = len(actionListGivenIndex)
+        indexGivenActionDictionary, actionGivenIndexList = createActionsDataStructures()
+        A = len(actionGivenIndexList)
 
-        stateDictionaryGetIndex, stateListGivenIndex = createStatesDataStructures()
-        S = len(stateListGivenIndex)
+        indexGivenStateDictionary, stateGivenIndexList = createStatesDataStructures()
+        S = len(stateGivenIndexList)
 
         #now we need to populate the nextStateProbability array and rewardsTable,
         # the distribution p(s'|s,a) and expected values r(s,a,s') as in Example 3.3 of [Sutton, 2018], page 52.
@@ -112,47 +91,57 @@ class UserSchedulingEnv(NextStateProbabilitiesEnv):
 
         nextStateProbability = np.zeros((S, A, S))
         rewardsTable = np.zeros((S, A, S))
-        plotBar = True
-        for s in range(0, S):
+        for s in range(S):
             #current state:
-            currentState = stateListGivenIndex[s]
+            currentState = stateGivenIndexList[s]
             (all_positions, buffers_occupancy) = currentState #interpret the state
-            (p1, p2) = all_positions
-            print('Reading state: p1=', p1, ',p2=', p2,'buffers=',buffers_occupancy)
-            #get the channels spectral efficiency (SE)
-            #@TODO obtain the SE based on the positions p1 and p2
+            print('Reading state: positions=', all_positions,'buffers=',buffers_occupancy)
             for a in range(A):                
-                currentAction = actionListGivenIndex[a]
-                chosen_user = a
+                currentAction = actionGivenIndexList[a]
+                chosen_user = a #in this case, the action is the user
+                #get the channels spectral efficiency (SE)
+                chosen_user_position = all_positions[chosen_user]
+
+                #@TODO obtain the SE based on the positions p1 and p2
+                se = self.channel_spectral_efficiencies[chosen_user_position[0],chosen_user_position[1]]
                 #based on selected (chosen) user, update its buffer
-                transmitRate = 3 #transmitted packets 
-                new_buffer = buffers_occupancy[chosen_user] - transmitRate #decrement buffer
+                transmitRate = se #transmitted packets 
+
+                new_buffer = np.array(buffers_occupancy)
+                new_buffer[chosen_user] -= transmitRate #decrement buffer of chosen user
                 new_buffer += num_incoming_packets_per_time_slot #arrival of new packets
 
                 #check if overflow
-                #in case positive, limit the buffers to maximum capacity and 
-                #update reward
+                #in case positive, limit the buffers to maximum capacity
+                number_dropped_packets = new_buffer - B
+                number_dropped_packets[number_dropped_packets<0] = 0
 
-                drop = True #dropped packets occurred?                
+                #saturate buffer levels
+                new_buffer -= number_dropped_packets
+
+                buffers_occupancy=tuple(new_buffer) #convert to tuple to compose state
+
                 # calculate rewards
-                sumDrops = np.sum(drop)
-                if sumDrops > 0:
+                sumDrops = np.sum(number_dropped_packets)
+                if sumDrops > 0: #dropped packets occurred?
                     r = -10 * sumDrops
                 else:
                     r = transmitRate
 
+
                 #calculate nextState
-                nextState = 0
+                all_positions = ((0,1),(1,0))
+                nextState = (all_positions, buffers_occupancy)
 
                 # probabilistic part: consider the user mobility
-                nextStateIndice = stateDictionaryGetIndex[nextState]
+                nextStateIndice = indexGivenStateDictionary[nextState]
                 #take in account mobility
                 nextStateProbability[s, a, nextStateIndice] = None
                 rewardsTable[s, a, nextStateIndice] = r
-        self.actionDictionaryGetIndex = actionDictionaryGetIndex
-        self.actionListGivenIndex = actionListGivenIndex
-        self.stateDictionaryGetIndex = stateDictionaryGetIndex
-        self.stateListGivenIndex = stateListGivenIndex
+        self.indexGivenActionDictionary = indexGivenActionDictionary
+        self.actionGivenIndexList = actionGivenIndexList
+        self.indexGivenStateDictionary = indexGivenStateDictionary
+        self.stateGivenIndexList = stateGivenIndexList
 
         return nextStateProbability, rewardsTable
 
@@ -165,8 +154,8 @@ class UserSchedulingEnv(NextStateProbabilitiesEnv):
         reward = history["reward_tp1"]
         nexts = history["state_tp1"]
 
-        currentState = self.stateListGivenIndex[s]
-        nextState = self.stateListGivenIndex[nexts]
+        currentState = self.stateGivenIndexList[s]
+        nextState = self.stateGivenIndexList[nexts]
         currentBuffer = np.array(nextState[0])
         nextBuffer = np.array(currentState[0])
 
@@ -224,7 +213,7 @@ def run_all():
     optimal_policy = mdp.convert_action_values_into_policy(optimal_action_values)
     if shouldPrintAll:
         print('policy = ', optimal_policy)
-        mdp.prettyPrintValues(optimal_policy, env.stateListGivenIndex, env.actionListGivenIndex)
+        mdp.prettyPrintValues(optimal_policy, env.stateGivenIndexList, env.actionGivenIndexList)
 
     q_learning_policy, rewardsQLearning = mdp.execute_q_learning(maxNumIterations=100)
 
@@ -344,23 +333,24 @@ def createStatesDataStructures(G=6, Nu=2, B=3):
             print("calculated total num S of states= ", len(all_states))
 
         N = len(all_states) #number of states
-        stateListGivenIndex = list()
-        stateDictionaryGetIndex = dict()
+        stateGivenIndexList = list()
+        indexGivenStateDictionary = dict()
         uniqueIndex = 0
         # add states to both dictionary and its inverse mapping (a list)
         for i in range(N):
-            stateListGivenIndex.append(all_states[i])
-            stateDictionaryGetIndex[all_states[i]] = uniqueIndex
+            stateGivenIndexList.append(all_states[i])
+            indexGivenStateDictionary[all_states[i]] = uniqueIndex
             uniqueIndex += 1
         if False:
-            print('stateDictionaryGetIndex = ', stateDictionaryGetIndex)
-            print('stateListGivenIndex = ', stateListGivenIndex)
-        return stateDictionaryGetIndex, stateListGivenIndex
+            print('indexGivenStateDictionary = ', indexGivenStateDictionary)
+            print('stateGivenIndexList = ', stateGivenIndexList)
+        return indexGivenStateDictionary, stateGivenIndexList
 
 if __name__ == '__main__':
-    env = UserSchedulingEnv()
-    env.prettyPrint()
     G=6
+    se = np.ones((G,G))
+    env = UserSchedulingEnv(se)
+    env.prettyPrint()
     Nu=2
     B=3
     createStatesDataStructures(G, Nu, B)
