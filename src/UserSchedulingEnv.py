@@ -149,7 +149,9 @@ class UserSchedulingEnv(NextStateProbabilitiesEnv):
 
                 for ue1_action in np.arange(5):
                     for ue2_action in np.arange(5):
-                        if self.ues_valid_actions[0][all_positions[0][0], all_positions[0][1]][ue1_action]!=0 and self.ues_valid_actions[1][all_positions[1][0], all_positions[1][1]][ue2_action]!=0:
+                        prob_ue1_action = self.ues_valid_actions[0][all_positions[0][0], all_positions[0][1]][ue1_action]
+                        prob_ue2_action = self.ues_valid_actions[1][all_positions[1][0], all_positions[1][1]][ue2_action]
+                        if prob_ue1_action!=0 and prob_ue2_action!=0:
                             #calculate nextState
                             new_position_ue1 = np.array(all_positions[0]) + self.actions_move[ue1_action]
                             new_position_ue2 = np.array(all_positions[1]) + self.actions_move[ue2_action]
@@ -160,7 +162,7 @@ class UserSchedulingEnv(NextStateProbabilitiesEnv):
                                 # probabilistic part: consider the user mobility
                                 nextStateIndice = indexGivenStateDictionary[nextState]
                                 #take in account mobility
-                                nextStateProbability[s, a, nextStateIndice] = self.ues_valid_actions[0][all_positions[0][0], all_positions[0][1]][ue1_action] * self.ues_valid_actions[1][all_positions[1][0], all_positions[1][1]][ue2_action]!=0
+                                nextStateProbability[s, a, nextStateIndice] = prob_ue1_action * prob_ue2_action
                                 rewardsTable[s, a, nextStateIndice] = r
         self.indexGivenActionDictionary = indexGivenActionDictionary
         self.actionGivenIndexList = actionGivenIndexList
