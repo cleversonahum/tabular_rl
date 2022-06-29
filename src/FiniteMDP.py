@@ -124,7 +124,7 @@ class FiniteMDP:
     this method in called "the optimal state-value function" and defined in
     Eq. (3.15) in page 62.
     '''
-    def compute_optimal_state_values(self, discountGamma = 0.9):
+    def buggy_compute_optimal_state_values(self, discountGamma = 0.9):
         '''Page 63 of [Sutton, 2018], Eq. (3.19)'''
         S = self.S
         A = self.A
@@ -135,17 +135,19 @@ class FiniteMDP:
         iteration = 1
         while True:
             for s in range(S):
+                print('AK, s=',s)
                 a_candidates = list()
                 for a in range(A):
                     value = 0
                     for nexts in range(S):
                         p = self.environment.nextStateProbability[s, a, nexts]
-                        r = self.environment.rewardsTable[s, a, nexts]
-                        value += p * (r + discountGamma * state_values[nexts])
+                        if p != 0:
+                            r = self.environment.rewardsTable[s, a, nexts]
+                            value += p * (r + discountGamma * state_values[nexts])
                     a_candidates.append(value)
                 new_state_values[s] = np.max(a_candidates)
             improvement = np.sum(np.abs(new_state_values - state_values))
-            # print('improvement =', improvement)
+            print('improvement =', improvement)
             if False:  # debug
                 print('state values=', state_values)
                 print('new state values=', new_state_values)
@@ -158,6 +160,117 @@ class FiniteMDP:
             iteration += 1
 
         return state_values, iteration
+
+    def original_compute_optimal_state_values(self, discountGamma = 0.9):
+    #def compute_optimal_state_values(self, discountGamma = 0.9):
+        '''Page 63 of [Sutton, 2018], Eq. (3.19)'''
+        S = self.S
+        A = self.A
+        #(S, A, nS) = self.environment.nextStateProbability.shape
+        # A = len(actionListGivenIndex)
+        new_state_values = np.zeros((S,))
+        state_values = np.zeros((S,))
+        iteration = 1
+        a_candidates = np.zeros((A,))
+        while True:
+            for s in range(S):
+                #fill with zeros without creating new array
+                #a_candidates[:] = 0
+                a_candidates.fill(0.0)
+                for a in range(A):
+                    value = 0
+                    for nexts in range(S):
+                        p = self.environment.nextStateProbability[s, a, nexts]
+                        if p != 0:
+                            r = self.environment.rewardsTable[s, a, nexts]
+                            value += p * (r + discountGamma * state_values[nexts])
+                    a_candidates[a] = value
+                new_state_values[s] = np.max(a_candidates)
+            improvement = np.sum(np.abs(new_state_values - state_values))
+            # print('improvement =', improvement)
+            if False:  # debug
+                print('state values=', state_values)
+                print('new state values=', new_state_values)
+                print('it=', iteration, 'improvement = ', improvement)
+            #I am avoiding to use np.copy() here because memory kept growing
+            for i in range(S):
+                state_values[i] = new_state_values[i]
+            if improvement < 1e-4:
+                break
+
+            iteration += 1
+
+        return state_values, iteration
+
+    '''
+    This is useful when nextStateProbability is sparse. It only goes over the
+    next states that are feasible.
+    '''
+    def compute_optimal_state_values(self, discountGamma = 0.9):
+    #def compute_optimal_state_values_sparse_prob_matrix(self, discountGamma = 0.9):
+        '''Page 63 of [Sutton, 2018], Eq. (3.19)'''
+        S = self.S
+        A = self.A
+
+        #creates a list of lists
+        valid_next_states = list()
+        for s in range(S):
+            valid_next_states.append(list())
+            for a in range(A):
+                for nexts in range(S):
+                    p = self.environment.nextStateProbability[s, a, nexts]
+                    if p != 0:
+                        #allow to have duplicated entries
+                        valid_next_states[s].append(nexts)
+        #eliminate duplicated entries
+        for s in range(S):
+            #convert to set
+            valid_next_states[s] = set(valid_next_states[s])
+            #convert back to list again
+            valid_next_states[s] = list(valid_next_states[s])
+
+        #(S, A, nS) = self.environment.nextStateProbability.shape
+        # A = len(actionListGivenIndex)
+        new_state_values = np.zeros((S,))
+        state_values = np.zeros((S,))
+        iteration = 1
+        a_candidates = np.zeros((A,))
+        while True:
+            print("iteration: {}".format(iteration))
+            for s in range(S):
+                # print(s)
+                #fill with zeros without creating new array
+                #a_candidates[:] = 0
+                a_candidates.fill(0.0)
+                feasible_next_states = valid_next_states[s]
+                num_of_feasible_next_states = len(feasible_next_states)                
+                for a in range(A):
+                    value = 0
+                    #for nexts in range(S):
+                    for feasible_nexts in range(num_of_feasible_next_states):
+                        # print('feasible_nexts=',feasible_nexts)
+                        nexts = feasible_next_states[feasible_nexts]                        
+                        p = self.environment.nextStateProbability[s, a, nexts]
+                        r = self.environment.rewardsTable[s, a, nexts]
+                        value += p * (r + discountGamma * state_values[nexts])
+                    a_candidates[a] = value
+                new_state_values[s] = np.max(a_candidates)
+            improvement = np.sum(np.abs(new_state_values - state_values))
+            # print('improvement =', improvement)
+            if False:  # debug
+                print('state values=', state_values)
+                print('new state values=', new_state_values)
+                print('it=', iteration, 'improvement = ', improvement)
+            #I am avoiding to use np.copy() here because memory kept growing
+            for i in range(S):
+                state_values[i] = new_state_values[i]
+            if improvement < 1e-4:
+                break
+
+            iteration += 1
+
+        return state_values, iteration
+
 
     '''
     In [Sutton, 2018] the main result of this method in called "the optimal
