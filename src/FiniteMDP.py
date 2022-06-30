@@ -34,6 +34,7 @@ import gym
 from gym import spaces
 
 class FiniteMDP:
+    #def __init__(self, environment: gym.Env, sparse = False):
     def __init__(self, environment: gym.Env):
         self.__version__ = "0.1.1"
         # print("AK Finite MDP - Version {}".format(self.__version__))
@@ -42,7 +43,8 @@ class FiniteMDP:
         assert isinstance(environment.action_space, spaces.Discrete)
         assert isinstance(environment.observation_space, spaces.Discrete)        
 
-        self.environment = environment
+        #self.sparse = sparse #assume the next state probability is sparse or not
+        self.environment = environment        
         self.S = environment.observation_space.n
         self.A = environment.action_space.n
 
@@ -123,8 +125,12 @@ class FiniteMDP:
     and the optimum values are estimated. In [Sutton, 2018] the main result of
     this method in called "the optimal state-value function" and defined in
     Eq. (3.15) in page 62.
+
+    For unknown reason, this implementation makes the
+    RAM consumption increase indefinitely. Besides, it is
+    slow because tries all states
     '''
-    def compute_optimal_state_values(self, discountGamma = 0.9):
+    def buggy_compute_optimal_state_values(self, discountGamma = 0.9):
         '''Page 63 of [Sutton, 2018], Eq. (3.19)'''
         S = self.S
         A = self.A
@@ -135,17 +141,19 @@ class FiniteMDP:
         iteration = 1
         while True:
             for s in range(S):
+                print('AK, s=',s)
                 a_candidates = list()
                 for a in range(A):
                     value = 0
                     for nexts in range(S):
                         p = self.environment.nextStateProbability[s, a, nexts]
-                        r = self.environment.rewardsTable[s, a, nexts]
-                        value += p * (r + discountGamma * state_values[nexts])
+                        if p != 0:
+                            r = self.environment.rewardsTable[s, a, nexts]
+                            value += p * (r + discountGamma * state_values[nexts])
                     a_candidates.append(value)
                 new_state_values[s] = np.max(a_candidates)
             improvement = np.sum(np.abs(new_state_values - state_values))
-            # print('improvement =', improvement)
+            print('improvement =', improvement)
             if False:  # debug
                 print('state values=', state_values)
                 print('new state values=', new_state_values)
@@ -158,6 +166,123 @@ class FiniteMDP:
             iteration += 1
 
         return state_values, iteration
+
+    def compute_optimal_state_values(self, discountGamma = 0.9):
+        '''Page 63 of [Sutton, 2018], Eq. (3.19)'''
+        S = self.S
+        A = self.A
+        #(S, A, nS) = self.environment.nextStateProbability.shape
+        # A = len(actionListGivenIndex)
+        new_state_values = np.zeros((S,))
+        state_values = np.zeros((S,))
+        iteration = 1
+        a_candidates = np.zeros((A,))
+        while True:
+            for s in range(S):
+                #fill with zeros without creating new array
+                #a_candidates[:] = 0
+                a_candidates.fill(0.0)
+                for a in range(A):
+                    value = 0
+                    for nexts in range(S):
+                        p = self.environment.nextStateProbability[s, a, nexts]
+                        if p != 0:
+                            r = self.environment.rewardsTable[s, a, nexts]
+                            value += p * (r + discountGamma * state_values[nexts])
+                    a_candidates[a] = value
+                new_state_values[s] = np.max(a_candidates)
+            improvement = np.sum(np.abs(new_state_values - state_values))
+            # print('improvement =', improvement)
+            if False:  # debug
+                print('state values=', state_values)
+                print('new state values=', new_state_values)
+                print('it=', iteration, 'improvement = ', improvement)
+            #I am avoiding to use np.copy() here because memory kept growing
+            for i in range(S):
+                state_values[i] = new_state_values[i]
+            if improvement < 1e-4:
+                break
+
+            iteration += 1
+
+        return state_values, iteration
+
+    '''
+    This is useful when nextStateProbability is sparse. It only goes over the
+    next states that are feasible.
+    '''
+    def compute_optimal_state_values_sparse(self, valid_next_states, discountGamma = 0.9):
+    #def compute_optimal_state_values_sparse_prob_matrix(self, discountGamma = 0.9):
+        '''Page 63 of [Sutton, 2018], Eq. (3.19)'''
+        S = self.S
+        A = self.A
+
+        #(S, A, nS) = self.environment.nextStateProbability.shape
+        # A = len(actionListGivenIndex)
+        new_state_values = np.zeros((S,))
+        state_values = np.zeros((S,))
+        iteration = 1
+        a_candidates = np.zeros((A,))
+        while True:
+            for s in range(S):
+                #print(s)
+                #fill with zeros without creating new array
+                #a_candidates[:] = 0
+                a_candidates.fill(0.0)
+                feasible_next_states = valid_next_states[s]
+                num_of_feasible_next_states = len(feasible_next_states)                
+                for a in range(A):
+                    value = 0
+                    #for nexts in range(S):
+                    for feasible_nexts in range(num_of_feasible_next_states):
+                        #print('feasible_nexts=',feasible_nexts)
+                        nexts = feasible_next_states[feasible_nexts]                        
+                        p = self.environment.nextStateProbability[s, a, nexts]
+                        r = self.environment.rewardsTable[s, a, nexts]
+                        #print('p',p,'state_values[nexts]',state_values[nexts],'r',r)
+                        value += p * (r + discountGamma * state_values[nexts])
+                    a_candidates[a] = value
+                new_state_values[s] = np.max(a_candidates)
+            improvement = np.sum(np.abs(new_state_values - state_values))
+            # print('improvement =', improvement)
+            if False:  # debug
+                print('state values=', state_values)
+                print('new state values=', new_state_values)
+                print('it=', iteration, 'improvement = ', improvement)
+            #I am avoiding to use np.copy() here because memory kept growing
+            for i in range(S):
+                state_values[i] = new_state_values[i]
+            if improvement < 1e-4:
+                break
+
+            iteration += 1
+
+        return state_values, iteration
+
+    '''
+    If next state probability is sparse, pre-compute the valid next states.
+    '''
+    def get_valid_next_states(self):
+        S = self.S
+        A = self.A
+        #creates a list of lists
+        valid_next_states = list()
+        for s in range(S):
+            valid_next_states.append(list())
+            for a in range(A):
+                for nexts in range(S):
+                    p = self.environment.nextStateProbability[s, a, nexts]
+                    if p != 0:
+                        #allow to have duplicated entries
+                        valid_next_states[s].append(nexts)
+        #eliminate duplicated entries
+        for s in range(S):
+            #convert to set
+            valid_next_states[s] = set(valid_next_states[s])
+            #convert back to list again
+            valid_next_states[s] = list(valid_next_states[s])
+        return valid_next_states
+
 
     '''
     In [Sutton, 2018] the main result of this method in called "the optimal
@@ -200,6 +325,66 @@ class FiniteMDP:
                 break
 
             action_values = new_action_values.copy()
+            iteration += 1
+
+        return action_values, iteration
+
+    '''
+    In [Sutton, 2018] the main result of this method in called "the optimal
+    action-value function" and defined in Eq. (3.16) in page 63.
+
+    Assumes sparsity.
+    '''
+    def compute_optimal_action_values_sparse(self, valid_next_states, discountGamma = 0.9):
+        '''Page 64 of [Sutton, 2018], Eq. (3.20)'''
+        S = self.S
+        A = self.A
+        #(S, A, nS) = self.environment.nextStateProbability.shape
+        # A = len(actionListGivenIndex)
+        new_action_values = np.zeros((S, A))
+        action_values = np.zeros((S, A))
+        iteration = 1
+        while True:
+            # src = new_action_values if in_place else action_values
+            for s in range(S):
+                feasible_next_states = valid_next_states[s]
+                num_of_feasible_next_states = len(feasible_next_states)                
+                for a in range(A):
+                    value = 0
+                    #for nexts in range(S):
+                    for feasible_nexts in range(num_of_feasible_next_states):
+                        nexts = feasible_next_states[feasible_nexts]
+                        p = self.environment.nextStateProbability[s, a, nexts] #p(s'|s,a) = p(nexts|s,a)
+                        r = self.environment.rewardsTable[s, a, nexts] #r(s,a,s') = r(s,a,nexts)
+                        best_a = -np.Infinity
+                        for nexta in range(A):
+                            temp = action_values[nexts, nexta]
+                            if temp > best_a:
+                                best_a = temp
+                        value += p * (r + discountGamma * best_a)
+                        # value += p*(r+discount*src[nexts])
+                        # print('aa', value)
+                    new_action_values[s, a] = value
+            improvement = np.sum(np.abs(new_action_values - action_values))
+            # print('improvement =', improvement)
+            if False:  # debug
+                print('state values=', action_values)
+                print('new state values=', new_action_values)
+                print('it=', iteration, 'improvement = ', improvement)
+            if improvement < 1e-4:
+                #action_values = new_action_values.copy()
+                #I am avoiding to use np.copy() here because memory kept growing
+                for i in range(S):
+                    for j in range(A):
+                        action_values[i,j] = new_action_values[i,j]
+                break
+
+            #action_values = new_action_values.copy()
+            #I am avoiding to use np.copy() here because memory kept growing
+            for i in range(S):
+                for j in range(A):
+                    action_values[i,j] = new_action_values[i,j]
+
             iteration += 1
 
         return action_values, iteration
@@ -324,5 +509,41 @@ def test_with_NextStateProbabilitiesEnv():
     print("stateActionValues=",stateActionValues)
     print("rewardsQLearning=",rewardsQLearning)
 
+def create_random_next_state_probability(S,A):
+    nextStateProbability = np.random.rand(S,A,S) #positive numbers
+    for s in range(S):
+        for a in range(A):
+            pmf = nextStateProbability[s,a] #probability mass function (pmf)
+            total_prob = sum(pmf)
+            if total_prob == 0:
+                nextStateProbability[s,a,0] = 1 #arbitrarily, make first state have all probability
+            else:
+                nextStateProbability[s,a] /= total_prob #normalize to have a pmf
+    return nextStateProbability
+
+def test_with_sparse_NextStateProbabilitiesEnv():
+    S = 3
+    A = 2
+    nextStateProbability = create_random_next_state_probability(S,A)
+    #force some entries to be zero (we want to test the sparsity code)
+    nextStateProbability[0,0] = np.zeros((S,))
+    nextStateProbability[0,0,1] = 1
+    rewardsTable = np.random.randn(S,A,S) #can be negative
+    environment = NextStateProbabilitiesEnv(nextStateProbability, rewardsTable)
+    mdp = FiniteMDP(environment) #, S, A, discount=0.9)
+    valid_next_states = mdp.get_valid_next_states()
+    state_values, iteration = mdp.compute_optimal_state_values()    
+    print("state_values=",state_values)
+    state_values, iteration = mdp.compute_optimal_state_values_sparse(valid_next_states)
+    print("state_values with sparsity=",state_values)
+
+    action_values, iteration = mdp.compute_optimal_action_values()
+    print("action_values=",action_values)
+    action_values, iteration = mdp.compute_optimal_action_values_sparse(valid_next_states)
+    print("action_values with sparsity=",action_values)
+
+
 if __name__ == '__main__':
-    test_with_NextStateProbabilitiesEnv()
+    test_with_sparse_NextStateProbabilitiesEnv()
+    #test_with_NextStateProbabilitiesEnv()
+

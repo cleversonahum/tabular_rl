@@ -106,6 +106,8 @@ class UserSchedulingEnv(NextStateProbabilitiesEnv):
         indexGivenStateDictionary, stateGivenIndexList = createStatesDataStructures()
         S = len(stateGivenIndexList)
 
+        # np.savez_compressed("states_actions.npz", indexGivenStateDictionary=indexGivenStateDictionary, stateGivenIndexList=stateGivenIndexList, indexGivenActionDictionary=indexGivenActionDictionary, actionGivenIndexList=actionGivenIndexList)
+
         #now we need to populate the nextStateProbability array and rewardsTable,
         # the distribution p(s'|s,a) and expected values r(s,a,s') as in Example 3.3 of [Sutton, 2018], page 52.
         # In this case the distribution p can be stored in a 3d matrix of dimension S x A x S and the reward table in
