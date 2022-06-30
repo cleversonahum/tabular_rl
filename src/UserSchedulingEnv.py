@@ -106,7 +106,7 @@ class UserSchedulingEnv(NextStateProbabilitiesEnv):
         indexGivenStateDictionary, stateGivenIndexList = createStatesDataStructures()
         S = len(stateGivenIndexList)
 
-        # np.savez_compressed("states_actions.npz", indexGivenStateDictionary=indexGivenStateDictionary, stateGivenIndexList=stateGivenIndexList, indexGivenActionDictionary=indexGivenActionDictionary, actionGivenIndexList=actionGivenIndexList)
+        np.savez_compressed("states_actions.npz", indexGivenStateDictionary=indexGivenStateDictionary, stateGivenIndexList=stateGivenIndexList, indexGivenActionDictionary=indexGivenActionDictionary, actionGivenIndexList=actionGivenIndexList)
 
         #now we need to populate the nextStateProbability array and rewardsTable,
         # the distribution p(s'|s,a) and expected values r(s,a,s') as in Example 3.3 of [Sutton, 2018], page 52.
@@ -119,7 +119,7 @@ class UserSchedulingEnv(NextStateProbabilitiesEnv):
             #current state:
             currentState = stateGivenIndexList[s]
             (all_positions, buffers_occupancy) = currentState #interpret the state
-            print('Reading state: positions=', all_positions,'buffers=',buffers_occupancy)
+            # print('Reading state: positions=', all_positions,'buffers=',buffers_occupancy)
             for a in range(A):                
                 currentAction = actionGivenIndexList[a]
                 chosen_user = a #in this case, the action is the user
@@ -157,15 +157,15 @@ class UserSchedulingEnv(NextStateProbabilitiesEnv):
                             #calculate nextState
                             new_position_ue1 = np.array(all_positions[0]) + self.actions_move[ue1_action]
                             new_position_ue2 = np.array(all_positions[1]) + self.actions_move[ue2_action]
-                            if not (np.array_equal(new_position_ue1, new_position_ue2)) and not np.array_equal(new_position_ue1, np.array([5,0])) and not np.array_equal(new_position_ue2, np.array([5,0])):
-                                new_position = ((new_position_ue1[0],new_position_ue1[1]), (new_position_ue2[0],new_position_ue2[1]))
-                                nextState = (new_position, buffers_occupancy)
+                            # if not (np.array_equal(new_position_ue1, new_position_ue2)) and not np.array_equal(new_position_ue1, np.array([5,0])) and not np.array_equal(new_position_ue2, np.array([5,0])):
+                            new_position = ((new_position_ue1[0],new_position_ue1[1]), (new_position_ue2[0],new_position_ue2[1]))
+                            nextState = (new_position, buffers_occupancy)
 
-                                # probabilistic part: consider the user mobility
-                                nextStateIndice = indexGivenStateDictionary[nextState]
-                                #take in account mobility
-                                nextStateProbability[s, a, nextStateIndice] = prob_ue1_action * prob_ue2_action
-                                rewardsTable[s, a, nextStateIndice] = r
+                            # probabilistic part: consider the user mobility
+                            nextStateIndice = indexGivenStateDictionary[nextState]
+                            #take in account mobility
+                            nextStateProbability[s, a, nextStateIndice] = prob_ue1_action * prob_ue2_action
+                            rewardsTable[s, a, nextStateIndice] = r
         self.indexGivenActionDictionary = indexGivenActionDictionary
         self.actionGivenIndexList = actionGivenIndexList
         self.indexGivenStateDictionary = indexGivenStateDictionary
@@ -320,15 +320,15 @@ def createStatesDataStructures(G=6, Nu=2, B=3):
         #because the base station is at position (G-1, 0) and users cannot be
         #in the same position at the same time        
         if show_debug_info:
-            print("theoretical S=", (G**2-1)*(G**2-2)*((B+1)**Nu))
+            print("theoretical S=", (G**2)*(G**2)*((B+1)**Nu))
 
-        bs_position = (G-1, 0) #Base station position
+        # bs_position = (G-1, 0) #Base station position
 
         all_positions_of_single_user = list()
         for i in range(G):
             for j in range(G):
-                if (i == bs_position[0]) and (j == bs_position[1]):
-                    continue #do not allow user at the BS position
+                # if (i == bs_position[0]) and (j == bs_position[1]):
+                    # continue #do not allow user at the BS position
                 all_positions_of_single_user.append((i,j))
 
         #create Cartesian product among positions of users
@@ -336,18 +336,18 @@ def createStatesDataStructures(G=6, Nu=2, B=3):
         #need to remove the positions that coincide
         N = len(all_positions_list)
         #print("N=",N)
-        i = 0
-        while (True):
-            positions_pair = all_positions_list[i]
-            position_u1 = positions_pair[0]
-            position_u2 = positions_pair[1]
-            if position_u1 == position_u2:
-                all_positions_list.pop(i)
-                N -= 1 #decrement the number N of elements in list
-            else:
-                i += 1 #continue searching the list
-            if i >= N:
-                break
+        # i = 0
+        # while (True):
+        #     positions_pair = all_positions_list[i]
+        #     position_u1 = positions_pair[0]
+        #     position_u2 = positions_pair[1]
+        #     if position_u1 == position_u2:
+        #         all_positions_list.pop(i)
+        #         N -= 1 #decrement the number N of elements in list
+        #     else:
+        #         i += 1 #continue searching the list
+        #     if i >= N:
+        #         break
 
         all_buffer_occupancy_list = list(itertools.product(np.arange(B + 1), repeat=Nu))
         all_states = itertools.product(all_positions_list, all_buffer_occupancy_list)
@@ -374,13 +374,18 @@ def createStatesDataStructures(G=6, Nu=2, B=3):
             print('stateGivenIndexList = ', stateGivenIndexList)
         return indexGivenStateDictionary, stateGivenIndexList
 
+def check_matrix(nextState):
+    a = np.sum(nextState) == nextState.shape[0]
+    print(a)
+
 if __name__ == '__main__':
     G=6
     se = np.ones((G,G))
     env = UserSchedulingEnv()
-    env.prettyPrint()
+    # env.prettyPrint()
     Nu=2
     B=3
+    check_matrix(env.nextStateProbability)
     createStatesDataStructures(G, Nu, B)
 
     if False:

@@ -8,37 +8,18 @@ episodes = np.arange(900, 1000)
 n_steps = 1000
 se = np.load("./src/spec_eff_matrix.npz")
 se = se.f.spec_eff_matrix
-env = UserSchedulingEnv()
+# env = UserSchedulingEnv()
 file_states_actions = np.load("./src/states_actions.npz", allow_pickle=True)
 indexGivenStateDictionary = file_states_actions.f.indexGivenStateDictionary.item()
-# file_optimal_values = np.load("./src/optimal_values.npz")
-# optimal_policy = file_optimal_values.f.optimal_policy
-mdp = FiniteMDP(env)
-print('1.5')
+file_optimal_values = np.load("./src/optimal_values.npz")
+optimal_policy = file_optimal_values.f.optimal_policy
+# mdp = FiniteMDP(env)
+# print('1.5')
 rewards = np.zeros((len(episodes), n_steps))
 n_users = 2
 
-print('2')
-shouldPrintAll = False
-# state_values, iteration = mdp.compute_optimal_state_values()
-valid_next_states = mdp.get_valid_next_states()
-state_values, iteration = mdp.compute_optimal_state_values_sparse(valid_next_states)
-
-if shouldPrintAll:
-	print('Optimum states, iteration = ', iteration, ' state_values = ', np.round(state_values, 1))
-
-print('3')
-optimal_action_values, iteration = mdp.compute_optimal_action_values_sparse(valid_next_states)
-if shouldPrintAll:
-	print('Optimum actions, iteration = ', iteration, ' action_values = ', np.round(optimal_action_values, 1))
-
-optimal_policy = mdp.convert_action_values_into_policy(optimal_action_values)
-if shouldPrintAll:
-	print('policy = ', optimal_policy)
-	mdp.prettyPrintValues(optimal_policy, env.stateGivenIndexList, env.actionGivenIndexList)
-
-np.save("./optimal_values.npz", state_values=state_values, optimal_action_values=optimal_action_values, optimal_policy=optimal_policy, valid_next_states=valid_next_states)
-
+actions = np.load("./actions_opt.npz")
+actions = actions.f.actions
 buffer_size = 3
 num_incoming_packets_per_time_slot = 2
 rewards = np.zeros((len(episodes), n_steps))
@@ -50,8 +31,9 @@ for n_episode, episode in enumerate(episodes):
 		if step == 0:
 			buffers = np.array([0, 0])
 		state = (pos_ues, tuple(buffers))
-		prob_actions = optimal_policy[indexGivenStateDictionary[state]]
-		chosen_user = np.random.choice(2, p=prob_actions) #in this case, the action is the user
+		# prob_actions = optimal_policy[indexGivenStateDictionary[state]]
+		# chosen_user = np.random.choice(2, p=prob_actions) #in this case, the action is the user
+		chosen_user = int(actions[n_episode, step])
 		number_dropped_packets = 0
 		for user in np.arange(n_users):
 			if user == chosen_user:
@@ -75,4 +57,4 @@ for n_episode, episode in enumerate(episodes):
 
 			# calculate rewards
 			rewards[n_episode, step] -= number_dropped_packets
-np.savez_compressed("./hist/rewards.npz".format(episode), rewards=rewards)
+np.savez_compressed("./hist/rewards_opt2.npz".format(episode), rewards=rewards)
